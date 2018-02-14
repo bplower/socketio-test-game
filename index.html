@@ -1,0 +1,105 @@
+<html>
+	<head>
+		<script src="/static/phaser.min.js"></script>
+		<script src="/static/socket.io.js"></script>
+		<script>
+			// Functions for communicating with the server
+			function on_server_connect() {
+				console.log("Connected to server!");
+				my_sid = socket.id;
+				document.getElementById("whoami").innerHTML = "My ID: " + my_sid;
+			}
+
+			function setplayermovement(data) {
+				console.log(data);
+				// If there are data for a player we aren't aware of, just ignore it
+				if (!(data.sid in players)) { return; }
+				// Set player movement
+				players[data.sid].x = data.posx;
+				players[data.sid].y = data.posy;
+				if (data.sid != my_sid) {
+					console.log("Setting movement for other player");
+					console.log(players[data.sid].body.velocity);
+					// console.log(players[data.sid].body.velocity.x);
+				}
+				players[data.sid].body.velocity.x = data.velx;
+				players[data.sid].body.velocity.y = data.vely;
+				if (data.sid != my_sid) {
+					console.log(players[data.sid].body.velocity);
+				}
+			}
+
+			function addplayer(data) {
+				if (!(data.sid in players)) {
+					console.log("Adding player: " + data.sid);
+					players[data.sid] = game.add.sprite(data.posx, data.posy, data.icon);
+					game.physics.arcade.enable(players[data.sid]);
+				}
+			}
+
+			function addplayers(data) {
+				data.map(addplayer);
+			}
+
+			function removeplayer(sid) {
+				console.log("Removing player: " + sid);
+				players[sid].kill();
+				delete players[sid];
+			}
+
+			var socket;
+			var game = new Phaser.Game(800, 600, Phaser.AUTO, 'phaser-example',
+										{preload: preload, create: create, update: update});
+			var my_sid;
+			var players = {};
+			var cursors;
+
+			function preload() {
+				game.load.image('star', '/static/assets/star.png');
+				game.load.image('jack-o-lantern1', '/static/assets/jack-o-lantern1.png');
+			}
+
+			function create() {
+				console.log("Setting up game")
+				game.physics.startSystem(Phaser.Physics.P2);
+				cursors = game.input.keyboard.createCursorKeys();
+				console.log("Connecting to server...")
+				socket = io('http://192.168.1.149:8000');
+				socket.on('connect', on_server_connect);
+				socket.on('setplayermovement', setplayermovement);
+				socket.on('addplayer', addplayer);
+				socket.on('addplayers', addplayers);
+				socket.on('removeplayer', removeplayer);
+				socket.connect();
+			}
+
+			function update() {
+				if (!(my_sid in players)) {
+					// This means we haven't been properly connected to the server yet
+					return;
+				}
+
+				velx = 0
+				vely = 0
+				if 		(cursors.left.isDown) {velx = -150}
+				else if (cursors.right.isDown) {velx = 150}
+				if 		(cursors.down.isDown) {vely = 150}
+				else if (cursors.up.isDown) {vely = -150}
+
+				update_dict = {}
+				if (players[my_sid].body.velocity.x != velx) {update_dict['velx'] = velx}
+				if (players[my_sid].body.velocity.y != vely) {update_dict['vely'] = vely}
+				if (Object.keys(update_dict).length > 0) {
+					// setplayermovement({velx: velx, vely: vely, posx: players[my_sid].x, posy: players[my_sid].y});
+					socket.emit('playerupdate', {velx: velx, vely: vely, posx: players[my_sid].x, posy: players[my_sid].y});
+				}
+			}
+
+		</script>
+	</head>
+	<body>
+		<p id="whoami"></p>
+		<div id="phaser-example"></div>
+	</body>
+</html>
+
